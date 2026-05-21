@@ -6,7 +6,7 @@ import { AnalyticsPanel } from "./components/AnalyticsPanel";
 import { PostFeed } from "./components/PostFeed";
 import { useRedditSearch } from "./hooks/useRedditSearch";
 import type { SavedSearch, RedditPost } from "./types";
-import { Sparkles, RefreshCw, Settings as SettingsIcon, LogOut } from "lucide-react";
+import { Sparkles, RefreshCw, LogOut } from "lucide-react";
 import { StarterPacks } from "./components/StarterPacks";
 import { TrendCloud } from "./components/TrendCloud";
 import { SettingsModal } from "./components/SettingsModal";
@@ -290,6 +290,7 @@ function Dashboard({ session }: { session: any }) {
             </div>
             
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {/* Hiding settings button since we are running on the free server-side tier
               <button
                 className="save-search-btn"
                 style={{ background: "rgba(255,255,255,0.02)", display: "flex", alignItems: "center", gap: 6, border: "1px solid var(--border-light)" }}
@@ -298,6 +299,7 @@ function Dashboard({ session }: { session: any }) {
                 <SettingsIcon size={14} style={{ color: "var(--accent-purple)" }} />
                 AI Settings
               </button>
+              */}
               <button
                 className="save-search-btn"
                 style={{ background: "transparent", border: "1px solid rgba(239, 68, 68, 0.3)", color: "#f87171", display: "flex", alignItems: "center", gap: 6 }}
@@ -377,7 +379,7 @@ function Dashboard({ session }: { session: any }) {
 
         {posts.length === 0 && !loading && (
           <>
-            <AIGenerator onSearch={handleSearch} onSave={handleSaveSearch} onOpenSettings={() => setIsSettingsOpen(true)} session={session} />
+            <AIGenerator onSearch={handleSearch} onSave={handleSaveSearch} session={session} />
             <StarterPacks onAddTrackers={handleSaveBulkSearches} />
             <TrendCloud onSearch={handleSearch} onSave={handleSaveSearch} />
           </>

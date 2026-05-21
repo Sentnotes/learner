@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Sparkles, RefreshCw, AlertCircle, Plus, Search, Settings } from "lucide-react";
+import { Sparkles, RefreshCw, AlertCircle, Plus, Search } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
 interface Suggestion {
@@ -11,151 +11,13 @@ interface Suggestion {
 interface AIGeneratorProps {
   onSearch: (params: { kw: string; sub: string; sort: string; time: string; limit: number | string }) => void;
   onSave: (params: { kw: string; sub: string; sort: string; time: string; limit: number | string }) => void;
-  onOpenSettings: () => void;
   session: any;
 }
 
-async function executeClientSideLLM(idea: string, provider: "gemini" | "openai", apiKey: string): Promise<Suggestion[]> {
-  const systemInstruction = 
-    "You are an expert market research and SEO assistant. The user will describe a product idea, niche, or topic they are interested in. " +
-    "Analyze this idea and generate a list of 4 to 6 highly targeted search queries (keywords) paired with highly relevant subreddits " +
-    "where potential customers or communities discuss pain points, needs, or alternatives related to this product. " +
-    "Output your response strictly as a valid, raw JSON array of objects, with no markdown backticks, no comments, and no explanation. " +
-    "Each object in the array MUST contain exactly these three string fields: " +
-    "1. \"kw\": a short search query/keyword (e.g. \"competitor alternative\" or \"productivity tracker\"). " +
-    "2. \"sub\": a highly relevant, active subreddit name without the r/ prefix (e.g. \"indiehackers\" or \"SaaS\"). " +
-    "3. \"rationale\": a short 1-sentence explanation of why this community and keyword are valuable for tracking. " +
-    "Example Output: " +
-    "[{\"kw\":\"habit builder\",\"sub\":\"productivity\",\"rationale\":\"Tracks discussions of habit tracking software and struggles.\"}]";
+// executeClientSideLLM removed — app now always uses server-side GEMINI_API_KEY via Vercel /api/generate
 
-  const promptText = `Generate custom keyword trackers for this product idea:\n"${idea}"`;
 
-  let resultJsonText = "";
-
-  if (provider === "openai") {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: systemInstruction + " Wrap the outer array in an object: {\"suggestions\": [...] }" },
-          { role: "user", content: promptText },
-        ],
-        temperature: 0.7,
-      }),
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      let errorMsg = `OpenAI API Error: HTTP ${response.status}`;
-      try {
-        const errJson = JSON.parse(errText);
-        if (errJson.error?.message) {
-          errorMsg += ` - ${errJson.error.message}`;
-        }
-      } catch (_) {}
-      throw new Error(errorMsg);
-    }
-
-    const openAiData = await response.json();
-    const rawContent = openAiData.choices[0].message.content;
-    const parsedWrapper = JSON.parse(rawContent);
-    const suggestionsArray = parsedWrapper.suggestions || (Array.isArray(parsedWrapper) ? parsedWrapper : null);
-    if (!suggestionsArray) {
-      throw new Error("Invalid structure returned from OpenAI model.");
-    }
-    resultJsonText = JSON.stringify(suggestionsArray);
-
-  } else {
-    // Gemini Direct API call
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-    
-    const response = await fetch(geminiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: `${systemInstruction}\n\n${promptText}` }],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.7,
-          responseMimeType: "application/json",
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      let errorMsg = `Gemini API Error: HTTP ${response.status}`;
-      try {
-        const errJson = JSON.parse(errText);
-        if (errJson.error?.message) {
-          errorMsg += ` - ${errJson.error.message}`;
-        }
-      } catch (_) {}
-      throw new Error(errorMsg);
-    }
-
-    const geminiData = await response.json();
-    if (!geminiData.candidates?.[0]?.content?.parts?.[0]?.text) {
-      throw new Error("Empty response or blocked safety settings from Gemini API.");
-    }
-    resultJsonText = geminiData.candidates[0].content.parts[0].text;
-  }
-
-  // Clean JSON markup
-  let cleanedJsonText = resultJsonText.trim();
-  if (cleanedJsonText.startsWith("```json")) {
-    cleanedJsonText = cleanedJsonText.slice(7);
-  } else if (cleanedJsonText.startsWith("```")) {
-    cleanedJsonText = cleanedJsonText.slice(3);
-  }
-  if (cleanedJsonText.endsWith("```")) {
-    cleanedJsonText = cleanedJsonText.slice(0, -3);
-  }
-  cleanedJsonText = cleanedJsonText.trim();
-
-  let parsedData = JSON.parse(cleanedJsonText);
-  if (parsedData && !Array.isArray(parsedData) && typeof parsedData === "object") {
-    // In case it's wrapped in an object
-    const keys = Object.keys(parsedData);
-    for (const k of keys) {
-      if (Array.isArray(parsedData[k])) {
-        parsedData = parsedData[k];
-        break;
-      }
-    }
-  }
-
-  if (!Array.isArray(parsedData)) {
-    throw new Error("The AI model response did not return a valid array of suggestions.");
-  }
-
-  // Map and sanitize fields
-  const formatted: Suggestion[] = parsedData.map((item: any) => ({
-    kw: String(item.kw || item.keyword || "").trim(),
-    sub: String(item.sub || item.subreddit || "").trim().replace(/^r\//, ""),
-    rationale: String(item.rationale || item.reason || "").trim(),
-  })).filter(item => item.kw && item.sub);
-
-  if (formatted.length === 0) {
-    throw new Error("No valid suggestions found in the AI response.");
-  }
-
-  return formatted;
-}
-
-export function AIGenerator({ onSearch, onSave, onOpenSettings, session }: AIGeneratorProps) {
+export function AIGenerator({ onSearch, onSave, session }: AIGeneratorProps) {
   const [idea, setIdea] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -169,30 +31,14 @@ export function AIGenerator({ onSearch, onSave, onOpenSettings, session }: AIGen
     setError("");
     setSuggestions([]);
 
-    let tier = "cloud";
-    let provider = "gemini";
-    let customApiKey = "";
-
-    const savedSettings = localStorage.getItem("reddscan_settings");
-    if (savedSettings) {
-      try {
-        const parsed = JSON.parse(savedSettings);
-        tier = parsed.tier || "cloud";
-        provider = parsed.provider || "gemini";
-        
-        if (tier === "byok") {
-          customApiKey = provider === "openai" ? parsed.openaiKey : parsed.geminiKey;
-        }
-      } catch (err) {
-        console.error("Failed to parse settings", err);
-      }
-    }
+    // Always use cloud tier — GEMINI_API_KEY is securely stored on the server (Vercel env vars)
+    const provider = "gemini";
 
     try {
       let data: any = null;
 
       try {
-        // Try calling Vercel Serverless Function first
+        // Call Vercel Serverless Function — key is read server-side from process.env.GEMINI_API_KEY
         const response = await fetch("/api/generate", {
           method: "POST",
           headers: {
@@ -201,7 +47,6 @@ export function AIGenerator({ onSearch, onSave, onOpenSettings, session }: AIGen
           body: JSON.stringify({
             idea: idea.trim(),
             provider,
-            customApiKey: tier === "byok" ? customApiKey : undefined,
           }),
         });
 
@@ -209,27 +54,12 @@ export function AIGenerator({ onSearch, onSave, onOpenSettings, session }: AIGen
         if (response.ok && contentType && contentType.includes("application/json")) {
           data = await response.json();
         } else {
-          // If server function returns non-OK or non-JSON (like local dev 404 HTML), and we are in BYOK mode
-          if (tier === "byok" && customApiKey) {
-            console.log("Vercel Serverless proxy unavailable/error. Falling back to direct client-side LLM call...");
-            data = await executeClientSideLLM(idea.trim(), provider as any, customApiKey);
-          } else {
-            // Throw proxy error
-            let errText = "";
-            try {
-              errText = await response.text();
-            } catch (_) {}
-            throw new Error(errText || `HTTP ${response.status} Error`);
-          }
+          let errText = "";
+          try { errText = await response.text(); } catch (_) {}
+          throw new Error(errText || `Server error HTTP ${response.status}`);
         }
       } catch (fetchErr: any) {
-        // If the fetch itself failed (e.g. local 404, network error) or parsing failed, and we have custom key
-        if (tier === "byok" && customApiKey) {
-          console.log("Fetch failed or error. Falling back to direct client-side LLM call...", fetchErr);
-          data = await executeClientSideLLM(idea.trim(), provider as any, customApiKey);
-        } else {
-          throw fetchErr;
-        }
+        throw fetchErr;
       }
 
       if (!Array.isArray(data)) {
@@ -285,7 +115,7 @@ export function AIGenerator({ onSearch, onSave, onOpenSettings, session }: AIGen
           </div>
         </div>
         
-        {/* Settings Shortcut Button */}
+        {/* Settings Shortcut Button commented out for free tier deployment
         <button
           onClick={onOpenSettings}
           title="Configure AI API settings"
@@ -316,6 +146,7 @@ export function AIGenerator({ onSearch, onSave, onOpenSettings, session }: AIGen
           <Settings size={14} />
           AI Setup
         </button>
+        */}
       </div>
 
       <form onSubmit={handleGenerate} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -380,12 +211,6 @@ export function AIGenerator({ onSearch, onSave, onOpenSettings, session }: AIGen
           <div>
             <div style={{ fontWeight: 600, marginBottom: 2 }}>Generation Failed</div>
             <p style={{ lineHeight: 1.4, opacity: 0.9 }}>{error}</p>
-            <button
-              onClick={(e) => { e.preventDefault(); onOpenSettings(); }}
-              style={{ background: "transparent", border: "none", color: "#60a5fa", cursor: "pointer", fontSize: 12, padding: 0, marginTop: 6, fontWeight: 500, display: "underline" } as any}
-            >
-              Check or paste your API keys in Settings &rarr;
-            </button>
           </div>
         </div>
       )}
