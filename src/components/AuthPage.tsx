@@ -51,6 +51,7 @@ export function AuthPage() {
     }
   };
 
+  /* Google login commented out until custom domain is ready
   const handleGoogleLogin = async () => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
@@ -64,6 +65,7 @@ export function AuthPage() {
       setError(err.message);
     }
   };
+  */
 
   return (
     <div

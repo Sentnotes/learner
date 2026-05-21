@@ -64,14 +64,28 @@ function Dashboard({ session }: { session: any }) {
     }
     loadTrackers();
 
-    const bookmarked = localStorage.getItem("reddscan_bookmarks");
-    if (bookmarked) {
-      try {
-        setBookmarks(JSON.parse(bookmarked));
-      } catch (e) {
-        console.error("Failed loading bookmarks", e);
+    async function loadBookmarks() {
+      if (!session?.user?.id) return;
+      
+      const { data, error } = await supabase
+        .from('bookmarks')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (data && !error) {
+        setBookmarks(data.map(d => ({
+          title: d.title,
+          url: d.url,
+          subreddit: d.subreddit,
+          author: d.author,
+          score: d.score,
+          num_comments: d.num_comments,
+          created_utc: Number(d.created_utc || 0),
+          selftext_preview: d.selftext || ""
+        })));
       }
     }
+    loadBookmarks();
 
     const savedSettings = localStorage.getItem("reddscan_settings");
     if (savedSettings) {
@@ -83,10 +97,7 @@ function Dashboard({ session }: { session: any }) {
     }
   }, [session]);
 
-  const saveBookmarks = (updated: RedditPost[]) => {
-    setBookmarks(updated);
-    localStorage.setItem("reddscan_bookmarks", JSON.stringify(updated));
-  };
+
 
   const handleSearch = (params: { kw: string; sub: string; sort: string; time: string; limit: number | string }) => {
     setCurrentKeyword(params.kw);
@@ -193,16 +204,42 @@ function Dashboard({ session }: { session: any }) {
     doSearch(params);
   };
 
-  const handleToggleBookmark = (post: RedditPost) => {
+  const handleToggleBookmark = async (post: RedditPost) => {
     const isBookmarked = bookmarks.some((b) => b.url === post.url);
-    let updated: RedditPost[];
 
     if (isBookmarked) {
-      updated = bookmarks.filter((b) => b.url !== post.url);
+      const { error } = await supabase
+        .from('bookmarks')
+        .delete()
+        .eq('user_id', session.user.id)
+        .eq('url', post.url);
+
+      if (!error) {
+        setBookmarks(bookmarks.filter((b) => b.url !== post.url));
+      } else {
+        console.error("Failed to delete bookmark:", error);
+      }
     } else {
-      updated = [post, ...bookmarks];
+      const { error } = await supabase
+        .from('bookmarks')
+        .insert([{
+          user_id: session.user.id,
+          title: post.title,
+          url: post.url,
+          subreddit: post.subreddit,
+          author: post.author,
+          score: post.score || 0,
+          num_comments: post.num_comments || 0,
+          created_utc: post.created_utc || 0,
+          selftext: post.selftext_preview || ""
+        }]);
+
+      if (!error) {
+        setBookmarks([post, ...bookmarks]);
+      } else {
+        console.error("Failed to insert bookmark:", error);
+      }
     }
-    saveBookmarks(updated);
   };
 
   const handleSubredditClick = (subreddit: string) => {
@@ -340,7 +377,7 @@ function Dashboard({ session }: { session: any }) {
 
         {posts.length === 0 && !loading && (
           <>
-            <AIGenerator onSearch={handleSearch} onSave={handleSaveSearch} onOpenSettings={() => setIsSettingsOpen(true)} />
+            <AIGenerator onSearch={handleSearch} onSave={handleSaveSearch} onOpenSettings={() => setIsSettingsOpen(true)} session={session} />
             <StarterPacks onAddTrackers={handleSaveBulkSearches} />
             <TrendCloud onSearch={handleSearch} onSave={handleSaveSearch} />
           </>

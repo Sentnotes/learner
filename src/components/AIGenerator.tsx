@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Sparkles, RefreshCw, AlertCircle, Plus, Search, Settings } from "lucide-react";
+import { supabase } from "../lib/supabaseClient";
 
 interface Suggestion {
   kw: string;
@@ -11,6 +12,7 @@ interface AIGeneratorProps {
   onSearch: (params: { kw: string; sub: string; sort: string; time: string; limit: number | string }) => void;
   onSave: (params: { kw: string; sub: string; sort: string; time: string; limit: number | string }) => void;
   onOpenSettings: () => void;
+  session: any;
 }
 
 async function executeClientSideLLM(idea: string, provider: "gemini" | "openai", apiKey: string): Promise<Suggestion[]> {
@@ -153,7 +155,7 @@ async function executeClientSideLLM(idea: string, provider: "gemini" | "openai",
   return formatted;
 }
 
-export function AIGenerator({ onSearch, onSave, onOpenSettings }: AIGeneratorProps) {
+export function AIGenerator({ onSearch, onSave, onOpenSettings, session }: AIGeneratorProps) {
   const [idea, setIdea] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -235,6 +237,17 @@ export function AIGenerator({ onSearch, onSave, onOpenSettings }: AIGeneratorPro
       }
 
       setSuggestions(data);
+
+      // Save to Supabase (ai_chats table)
+      if (session?.user?.id) {
+        const { error: chatError } = await supabase.from('ai_chats').insert([{
+          user_id: session.user.id,
+          prompt: idea.trim(),
+          response: JSON.stringify(data),
+          provider: provider
+        }]);
+        if (chatError) console.error("Error saving chat history:", chatError);
+      }
     } catch (err: any) {
       console.error("AI Generation Error:", err);
       setError(err.message || "Something went wrong while generating recommendations.");
